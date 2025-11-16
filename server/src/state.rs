@@ -5,6 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::AuthMode;
 use socket2::{SockRef, TcpKeepalive};
 use tokio::{
     io::Interest,
@@ -27,7 +28,7 @@ const CLEANUP_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub struct State {
     pub manager: Arc<Mutex<ClientManager>>,
     pub max_sockets: u8,
-    pub require_auth: bool,
+    pub auth_mode: AuthMode,
     pub secure: bool,
     pub domain: String,
 }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 use anyhow::Result;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use socket2::{SockRef, TcpKeepalive};
 use tokio::io;
@@ -9,7 +10,7 @@ use tokio::net::TcpStream;
 pub use tokio::sync::broadcast;
 use tokio::time::{sleep, Duration};
 
-pub const PROXY_SERVER: &str = "https://your-domain.com";
+pub const PROXY_SERVER: &str = "https://localtunnel.me";
 pub const LOCAL_HOST: &str = "127.0.0.1";
 
 // See https://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO to understand how keepalive work.
@@ -22,17 +23,28 @@ const TCP_KEEPALIVE_RETRIES: u32 = 5;
 struct ProxyResponse {
     id: String,
     port: u16,
+    #[serde(default = "default_max_conn_count")]
     max_conn_count: u8,
     url: String,
+    #[serde(default)]
+    cached_url: Option<String>,
+    #[serde(default)]
+    ip: Option<String>,
+}
+
+const fn default_max_conn_count() -> u8 {
+    1
 }
 
 /// The server detail for client to connect
 #[derive(Clone, Debug)]
 pub struct TunnelServerInfo {
-    pub host: String,
-    pub port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    pub remote_ip: Option<String>,
     pub max_conn_count: u8,
     pub url: String,
+    pub cached_url: Option<String>,
 }
 
 pub struct ClientConfig {
@@ -68,6 +80,10 @@ pub async fn open_tunnel(config: ClientConfig) -> Result<String> {
     )
     .await;
 
+    if let Some(cached_url) = &tunnel_info.cached_url {
+        log::info!("Cached tunnel url: {}", cached_url);
+    }
+
     Ok(tunnel_info.url)
 }
 
@@ -76,29 +92,31 @@ async fn get_tunnel_endpoint(
     subdomain: Option<String>,
     credential: Option<String>,
 ) -> Result<TunnelServerInfo> {
-    let server = server.as_deref().unwrap_or(PROXY_SERVER);
+    let server = server
+        .as_deref()
+        .unwrap_or(PROXY_SERVER)
+        .trim_end_matches('/');
     let assigned_domain = subdomain.as_deref().unwrap_or("?new");
     let mut uri = format!("{}/{}", server, assigned_domain);
     if let Some(credential) = credential {
-        uri = format!("{}?credential={}", uri, credential);
+        let separator = if uri.contains('?') { '&' } else { '?' };
+        uri = format!("{}{}credential={}", uri, separator, credential);
     }
     log::info!("Request for assign domain: {}", uri);
 
-    let resp = reqwest::get(uri).await?.json::<ProxyResponse>().await?;
+    let resp = reqwest::get(&uri).await?.json::<ProxyResponse>().await?;
     log::info!("Response from server: {:#?}", resp);
 
-    let parts = resp.url.split("//").collect::<Vec<&str>>();
-    let mut host = parts[1].split(':').collect::<Vec<&str>>()[0];
-    host = match host.split_once('.') {
-        Some((_, base)) => base,
-        None => host,
-    };
+    let remote_host = parse_remote_host(server).unwrap_or_else(|| LOCAL_HOST.to_string());
+    let remote_ip = resp.ip.clone();
 
     let tunnel_info = TunnelServerInfo {
-        host: host.to_string(),
-        port: resp.port,
+        remote_host,
+        remote_port: resp.port,
+        remote_ip,
         max_conn_count: resp.max_conn_count,
         url: resp.url,
+        cached_url: resp.cached_url,
     };
 
     Ok(tunnel_info)
@@ -112,8 +130,9 @@ async fn tunnel_to_endpoint(
     max_conn: u8,
 ) {
     log::info!("Tunnel server info: {:?}", server);
-    let server_host = server.host;
-    let server_port = server.port;
+    let remote_host = server.remote_host.clone();
+    let remote_ip = server.remote_ip.clone();
+    let server_port = server.remote_port;
     let local_host = local_host.unwrap_or(LOCAL_HOST.to_string());
 
     let count = std::cmp::min(server.max_conn_count, max_conn);
@@ -133,7 +152,8 @@ async fn tunnel_to_endpoint(
                             return;
                         },
                     };
-                    let server_host = server_host.clone();
+                    let remote_host = remote_host.clone();
+                    let remote_ip = remote_ip.clone();
                     let local_host = local_host.clone();
 
                     let mut shutdown_receiver = shutdown_signal.subscribe();
@@ -141,7 +161,7 @@ async fn tunnel_to_endpoint(
                     tokio::spawn(async move {
                         log::info!("Create a new proxy connection.");
                         tokio::select! {
-                            res = handle_connection(server_host, server_port, local_host, local_port) => {
+                            res = handle_connection(remote_host.clone(), remote_ip.clone(), server_port, local_host, local_port) => {
                                 match res {
                                     Ok(_) => log::info!("Connection result: {:?}", res),
                                     Err(err) => {
@@ -169,12 +189,14 @@ async fn tunnel_to_endpoint(
 
 async fn handle_connection(
     remote_host: String,
+    remote_ip: Option<String>,
     remote_port: u16,
     local_host: String,
     local_port: u16,
 ) -> Result<()> {
-    log::debug!("Connect to remote: {}, {}", remote_host, remote_port);
-    let mut remote_stream = TcpStream::connect(format!("{}:{}", remote_host, remote_port)).await?;
+    let target_host = remote_ip.unwrap_or(remote_host);
+    log::debug!("Connect to remote: {}, {}", target_host, remote_port);
+    let mut remote_stream = TcpStream::connect(format!("{}:{}", target_host, remote_port)).await?;
     log::debug!("Connect to local: {}, {}", local_host, local_port);
     let mut local_stream = TcpStream::connect(format!("{}:{}", local_host, local_port)).await?;
 
@@ -189,4 +211,20 @@ async fn handle_connection(
 
     io::copy_bidirectional(&mut remote_stream, &mut local_stream).await?;
     Ok(())
+}
+
+fn parse_remote_host(server: &str) -> Option<String> {
+    if let Ok(parsed) = Url::parse(server) {
+        if let Some(host) = parsed.host_str() {
+            return Some(host.to_string());
+        }
+    }
+
+    let (_, remainder) = server.split_once("://").unwrap_or(("", server));
+    let host = remainder.split('/').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
 }

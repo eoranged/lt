@@ -25,6 +25,9 @@ mod config;
 mod error;
 mod proxy;
 mod state;
+mod types;
+
+pub use crate::types::AuthMode;
 
 /// The interval between cleanup checks
 const CLEANUP_CHECK_INTERVAL: Duration = Duration::from_secs(60);
@@ -42,7 +45,7 @@ pub struct ServerConfig {
     pub secure: bool,
     pub max_sockets: u8,
     pub proxy_port: u16,
-    pub require_auth: bool,
+    pub auth_mode: AuthMode,
 }
 
 /// Start the proxy use low level api from hyper.
@@ -54,23 +57,25 @@ pub async fn start(config: ServerConfig) -> Result<()> {
         secure,
         max_sockets,
         proxy_port,
-        require_auth,
+        auth_mode,
     } = config;
     log::info!("Api server listens at {} {}", &domain, api_port);
     log::info!(
-        "Start proxy server at {} {}, options: {} {}, require auth: {}",
+        "Start proxy server at {} {}, options: {} {}, auth mode: {}",
         &domain,
         proxy_port,
         secure,
         max_sockets,
-        require_auth
+        auth_mode
     );
+
+    // TODO: validate auth config on start
 
     let manager = Arc::new(Mutex::new(ClientManager::new(max_sockets)));
     let api_state = web::Data::new(State {
         manager: manager.clone(),
         max_sockets,
-        require_auth,
+        auth_mode,
         secure,
         domain,
     });

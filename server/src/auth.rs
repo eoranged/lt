@@ -16,7 +16,20 @@ impl Auth for () {
     }
 }
 
+pub struct PlaintextPassword;
 pub struct CfWorkerStore;
+
+#[async_trait]
+impl Auth for PlaintextPassword {
+    async fn credential_is_valid(&self, credential: &str, _value: &str) -> Result<bool> {
+        let password = CONFIG
+            .plaintext_password
+            .clone()
+            .ok_or(ServerError::InvalidConfig)?;
+
+        Ok(credential == password)
+    }
+}
 
 #[async_trait]
 impl Auth for CfWorkerStore {

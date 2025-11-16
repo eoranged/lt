@@ -1,30 +1,29 @@
 # Localtunnel
 
-[![localtunnel](https://img.shields.io/crates/v/localtunnel.svg)](https://crates.io/crates/localtunnel)
-[![localtunnel-client](https://img.shields.io/crates/v/localtunnel-client.svg)](https://crates.io/crates/localtunnel-client)
-[![localtunnel-server](https://img.shields.io/crates/v/localtunnel-server.svg)](https://crates.io/crates/localtunnel-server)
+Updated fork of [rlt](https://github.com/kaichaosun/rlt) by [kaichaosun](https://github.com/kaichaosun) with [localtunnel](https://github.com/localtunnel/localtunnel) compatibility.
 
-Localtunnel exposes your localhost endpoint to the world, user cases are:
+Localtunnel exposes your localhost endpoint to the world, use cases are:
 - API testing
 - multiple devices access to single data store
 - peer to peer connection, workaround for NAT hole punching.
 
 ## Client Usage
 
-Known issue: *the public proxy server is down, please setup your own server.*
-
 Use in CLI:
 
 ```shell
-cargo install localtunnel
+cargo install --git https://github.com/eoranged/lt localtunnel
 
+# host defaults to https://localtunnel.me, subdomain is optional
+localtunnel client --port 3000
+localtunnel client --subdomain my-api --port 3000
 localtunnel client --host https://your-domain.com --subdomain kaichao --port 3000
 ```
 
 Use as a Rust library:
 
 ```shell
-cargo add localtunnel-client
+cargo add --git https://github.com/eoranged/lt localtunnel-client
 ```
 
 ```Rust
@@ -58,11 +57,11 @@ localtunnel server --domain your-domain.com --port 3000 --proxy-port 3001 --secu
 Use as a Rust library,
 
 ```shell
-cargo install localtunnel-server
+cargo add --git https://github.com/eoranged/lt localtunnel-server
 ```
 
 ```Rust
-use localtunnel_server::{start, ServerConfig};
+use localtunnel_server::{start, ServerConfig, AuthMode};
 
 let config = ServerConfig {
     domain: "your-domain.com".to_string(),
@@ -70,11 +69,24 @@ let config = ServerConfig {
     secure: true,
     max_sockets: 10,
     proxy_port: 3001,
-    require_auth: false,
+    auth_mode: AuthMode::NOAUTH,
 };
 
 start(config).await?
 ```
+
+## Configuration
+
+The server supports the following environment variables:
+
+- `RUST_LOG`: Logging level (e.g., `info`, `debug`, `warn`, `error`). Defaults to `info` if not set.
+- `PLAINTEXT_PASSWORD`: Password for authentication when `auth_mode` is PLAINTEXT_PASSWORD (required when using plaintext authentication).
+- `CLOUDFLARE_ACCOUNT`: Cloudflare account ID for KV storage (required when using Cloudflare authentication).
+- `CLOUDFLARE_NAMESPACE`: Cloudflare KV namespace ID for storing authentication tokens (required when using Cloudflare authentication).
+- `CLOUDFLARE_AUTH_EMAIL`: Cloudflare account email for API authentication (required when using Cloudflare authentication).
+- `CLOUDFLARE_AUTH_KEY`: Cloudflare API key for authentication (required when using Cloudflare authentication).
+
+You can create a `.env` file in the project root with these variables. See `.env.example` for reference.
 
 ## Sponsor
 

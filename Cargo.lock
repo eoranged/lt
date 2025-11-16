@@ -1065,6 +1065,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "async-trait",
+ "clap",
  "dotenv",
  "envy",
  "hyper",

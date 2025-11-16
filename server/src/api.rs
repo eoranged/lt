@@ -3,8 +3,9 @@ use anyhow::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::auth::{Auth, CfWorkerStore};
+use crate::auth::{Auth, CfWorkerStore, PlaintextPassword};
 use crate::state::State;
+use crate::AuthMode;
 
 #[get("/api/status")]
 pub async fn api_status() -> impl Responder {
@@ -16,6 +17,48 @@ pub async fn api_status() -> impl Responder {
     HttpResponse::Ok().json(status)
 }
 
+async fn validate_credentials(
+    endpoint: &web::Path<String>,
+    info: &web::Query<AuthInfo>,
+    state: &web::Data<State>,
+) -> Result<bool, actix_web::Error> {
+    if state.auth_mode == AuthMode::NOAUTH {
+        return Ok(true);
+    }
+    let credential = match info.credential.clone() {
+        Some(val) => val,
+        None => {
+            return Err(actix_web::error::ErrorUnauthorized(
+                "Credentials not provided",
+            ))
+        }
+    };
+    let credential_is_valid = match &state.auth_mode {
+        AuthMode::CLOUDFLARE => {
+            CfWorkerStore
+                .credential_is_valid(&credential, &endpoint)
+                .await
+        }
+        AuthMode::PLAINTEXT => PlaintextPassword.credential_is_valid(&credential, "").await,
+        mode => {
+            log::error!("Invalid AuthMode: {:?}", mode);
+            return Err(actix_web::error::ErrorInternalServerError(
+                "Invalid configuration",
+            ));
+        }
+    };
+
+    match credential_is_valid {
+        Ok(val) => Ok(val),
+        Err(err) => {
+            log::error!("Error while validating creds: {:?}", err);
+            Err(actix_web::error::ErrorInternalServerError(
+                "Internal Server Error",
+            ))
+        }
+    }
+}
+
 /// Request proxy endpoint
 #[get("/{endpoint}")]
 pub async fn request_endpoint(
@@ -24,7 +67,7 @@ pub async fn request_endpoint(
     state: web::Data<State>,
 ) -> impl Responder {
     log::debug!("Request proxy endpoint, {}", endpoint);
-    log::debug!("Require auth: {}", state.require_auth);
+    log::debug!("Require auth: {}", state.auth_mode);
 
     match validate_endpoint(&endpoint) {
         Ok(true) => (),
@@ -38,29 +81,10 @@ pub async fn request_endpoint(
         }
     }
 
-    if state.require_auth {
-        let credential = match info.credential.clone() {
-            Some(val) => val,
-            None => {
-                return HttpResponse::BadRequest().body("Request Error: credential param is empty.")
-            }
-        };
-
-        match CfWorkerStore
-            .credential_is_valid(&credential, &endpoint)
-            .await
-        {
-            Ok(true) => (),
-            Ok(false) => {
-                return HttpResponse::BadRequest()
-                    .body("Error: credential is not valid.".to_string())
-            }
-            Err(err) => {
-                log::error!("Server error: {:?}", err);
-                return HttpResponse::InternalServerError()
-                    .body(format!("Server Error: {:?}", err));
-            }
-        };
+    match validate_credentials(&endpoint, &info, &state).await {
+        Ok(true) => (),
+        Ok(false) => return HttpResponse::Unauthorized().body("Invalid credentials"),
+        Err(err) => return err.error_response(),
     }
 
     let mut manager = state.manager.lock().await;

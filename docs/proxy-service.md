@@ -20,14 +20,19 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```shell
 cargo install localtunnel
 
-# Set credentials if needed
+# Set cloudflare credentials if needed
 
 export CLOUDFLARE_ACCOUNT=xxx
 export CLOUDFLARE_NAMESPACE=xxx
 export CLOUDFLARE_AUTH_EMAIL=xxx
 export CLOUDFLARE_AUTH_KEY=xxx
 
-localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --require-auth
+localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode cloudflare
+
+# or set plaintext password
+export PLAINTEXT_PASSWORD=something-very-secret
+localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode plaintext
+
 ```
 
 *Known issues:*
@@ -48,13 +53,10 @@ Add a systemd service `/etc/systemd/system/localtunnel.service` with following c
 Description=localtunnel
 
 [Service]
-Environment="CLOUDFLARE_ACCOUNT=xxx"
-Environment="CLOUDFLARE_NAMESPACE=xxx"
-Environment="CLOUDFLARE_AUTH_EMAIL=xxx"
-Environment="CLOUDFLARE_AUTH_KEY=xxx"
+Environment="PLAINTEXT_PASSWORD=something-very-secret"
 Environment="RUST_LOG=debug"
 Environment="RUST_BACKTRACE=1"
-ExecStart=/root/.cargo/bin/localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --require-auth
+ExecStart=/root/.cargo/bin/localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode plaintext
 Restart=always
 RestartSec=10
 

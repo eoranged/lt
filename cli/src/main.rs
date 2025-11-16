@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use localtunnel_client::{broadcast, open_tunnel, ClientConfig};
-use localtunnel_server::{start, ServerConfig};
+use localtunnel_server::{start, AuthMode, ServerConfig};
 use tokio::signal;
 
 mod config;
@@ -19,11 +19,11 @@ enum Command {
     /// Builds connection between remote proxy server and local api.
     Client {
         /// Address of proxy server
-        #[clap(long)]
+        #[clap(long, default_value = "https://localtunnel.me")]
         host: String,
-        /// Subdomain of the proxied url
+        /// Subdomain of the proxied url. Optional; a random one will be assigned when omitted.
         #[clap(long)]
-        subdomain: String,
+        subdomain: Option<String>,
         /// The local host to expose.
         #[clap(long, default_value = "127.0.0.1")]
         local_host: String,
@@ -55,7 +55,7 @@ enum Command {
         #[clap(long, default_value = "3001")]
         proxy_port: u16,
         #[clap(long)]
-        require_auth: bool,
+        auth_mode: AuthMode,
     },
 }
 
@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
             let (notify_shutdown, _) = broadcast::channel(1);
             let config = ClientConfig {
                 server: Some(host),
-                subdomain: Some(subdomain),
+                subdomain,
                 local_host: Some(local_host),
                 local_port: port,
                 shutdown_signal: notify_shutdown.clone(),
@@ -87,6 +87,7 @@ async fn main() -> Result<()> {
             };
             let result = open_tunnel(config).await?;
             log::info!("Tunnel url: {:?}", result);
+            println!("Tunnel url: {:?}", result);
 
             signal::ctrl_c().await?;
             log::info!("Quit");
@@ -97,7 +98,7 @@ async fn main() -> Result<()> {
             secure,
             max_sockets,
             proxy_port,
-            require_auth,
+            auth_mode,
         } => {
             let config = ServerConfig {
                 domain,
@@ -105,7 +106,7 @@ async fn main() -> Result<()> {
                 secure,
                 max_sockets,
                 proxy_port,
-                require_auth,
+                auth_mode,
             };
             start(config).await?;
         }
