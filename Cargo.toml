@@ -13,3 +13,9 @@ anyhow = { version = "1.0", features = ["backtrace"] }
 log = "0.4.28"
 serde = { version = "1.0", features = ["derive"] }
 socket2 = "0.6"
+
+[profile.release]
+opt-level = "s" # Maximum optimizations, slower compilation but faster runtime
+debug = false # No debug info, smaller binary
+lto = "fat" # Link Time Optimization for aggressive optimization
+codegen-units = 1 # Single codegen unit for maximum optimization (can increase compile time)
