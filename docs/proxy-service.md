@@ -127,6 +127,152 @@ cp ~/caddy/Caddyfile /etc/caddy/Caddyfile
 systemctl start caddy.service
 ```
 
+## Setup Nginx proxy
+
+Alternatively, you can use nginx as a reverse proxy instead of Caddy.
+
+Install nginx,
+
+```shell
+sudo apt update
+sudo apt install nginx
+```
+
+Install certbot for Let's Encrypt SSL certificates,
+
+```shell
+sudo apt install certbot python3-certbot-nginx
+```
+
+Create nginx configuration file `/etc/nginx/sites-available/localtunnel.conf`,
+
+```nginx
+# Main domain configuration
+server {
+    listen 80;
+    server_name proxy.your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Wildcard subdomain configuration
+server {
+    listen 80;
+    server_name *.proxy.your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Enable the site and restart nginx,
+
+```shell
+sudo ln -s /etc/nginx/sites-available/localtunnel.conf /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+Configure SSL certificates with certbot,
+
+```shell
+# For the main domain
+sudo certbot --nginx -d proxy.your-domain.com
+
+# For wildcard subdomains (requires DNS validation)
+sudo certbot certonly --manual --preferred-challenges dns -d "*.proxy.your-domain.com"
+```
+
+After obtaining the wildcard certificate, update the nginx configuration to include SSL,
+
+```nginx
+# Main domain configuration with SSL
+server {
+    listen 80;
+    server_name proxy.your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name proxy.your-domain.com;
+
+    ssl_certificate /etc/letsencrypt/live/proxy.your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/proxy.your-domain.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Wildcard subdomain configuration with SSL
+server {
+    listen 80;
+    server_name *.proxy.your-domain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name *.proxy.your-domain.com;
+
+    ssl_certificate /etc/letsencrypt/live/proxy.your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/proxy.your-domain.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Test and reload nginx,
+
+```shell
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Set up automatic certificate renewal,
+
+```shell
+# Test renewal
+sudo certbot renew --dry-run
+
+# Renewal is automatically configured via systemd timer
+sudo systemctl status certbot.timer
+```
+
 ## Configure Firewall
 
 ```shell
