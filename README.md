@@ -14,10 +14,11 @@ Use in CLI:
 ```shell
 cargo install --git https://github.com/eoranged/lt localtunnel
 
-# host defaults to https://localtunnel.me, subdomain is optional
-localtunnel client --port 3000
-localtunnel client --subdomain my-api --port 3000
-localtunnel client --host https://your-domain.com --subdomain kaichao --port 3000
+# host defaults to https://localtunnel.me, subdomain is optional.
+# Running `lt --port 3000` is equivalent to `lt client --port 3000`
+lt --port 3000
+lt --subdomain my-api --port 3000
+lt --host https://your-domain.com --subdomain kaichao --port 3000
 ```
 
 Use as a Rust library:
@@ -51,7 +52,7 @@ let _ = notify_shutdown.send(());
 Use in CLI:
 
 ```shell
-localtunnel server --domain your-domain.com --port 3000 --proxy-port 3001 --secure
+lt server --domain your-domain.com --port 3000 --proxy-port 3001 --secure
 ```
 
 Use as a Rust library,

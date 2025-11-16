@@ -1,3 +1,5 @@
+use std::env;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use localtunnel_client::{broadcast, open_tunnel, ClientConfig};
@@ -64,7 +66,7 @@ async fn main() -> Result<()> {
     config::setup();
     log::info!("Run localtunnel CLI!");
 
-    let command = Cli::parse().command;
+    let command = parse_cli().command;
 
     match command {
         Command::Client {
@@ -113,4 +115,23 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn parse_cli() -> Cli {
+    let args = env::args().collect::<Vec<_>>();
+    Cli::parse_from(cli_args_with_default_subcommand(args))
+}
+
+fn cli_args_with_default_subcommand(mut args: Vec<String>) -> Vec<String> {
+    let needs_default_client = match args.get(1).map(|s| s.as_str()) {
+        None => true,
+        Some("-h") | Some("--help") | Some("-V") | Some("--version") => false,
+        Some(arg) => arg.starts_with('-'),
+    };
+
+    if needs_default_client {
+        args.insert(1, "client".to_string());
+    }
+
+    args
 }

@@ -11,14 +11,14 @@ You can now login the server with SSH,
 ssh ubuntu@proxy.your-domain.com
 ```
 
-## Install Rust and localtunnel
+## Install Rust and lt CLI
 
 ```shell
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 ```shell
-cargo install localtunnel
+cargo install --git https://github.com/eoranged/lt localtunnel
 
 # Set cloudflare credentials if needed
 
@@ -27,11 +27,11 @@ export CLOUDFLARE_NAMESPACE=xxx
 export CLOUDFLARE_AUTH_EMAIL=xxx
 export CLOUDFLARE_AUTH_KEY=xxx
 
-localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode cloudflare
+lt server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode cloudflare
 
 # or set plaintext password
 export PLAINTEXT_PASSWORD=something-very-secret
-localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode plaintext
+lt server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode plaintext
 
 ```
 
@@ -44,7 +44,7 @@ Install libssl,
 sudo apt install libssl-dev
 ```
 
-## Run localtunnel with systemd
+## Run lt with systemd
 
 Add a systemd service `/etc/systemd/system/localtunnel.service` with following content,
 
@@ -56,7 +56,7 @@ Description=localtunnel
 Environment="PLAINTEXT_PASSWORD=something-very-secret"
 Environment="RUST_LOG=debug"
 Environment="RUST_BACKTRACE=1"
-ExecStart=/root/.cargo/bin/localtunnel server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode plaintext
+ExecStart=/root/.cargo/bin/lt server --domain proxy.your-domain.com --port 3000 --proxy-port 3001 --secure --auth-mode plaintext
 Restart=always
 RestartSec=10
 
