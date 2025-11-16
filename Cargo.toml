@@ -19,3 +19,8 @@ opt-level = "s" # Maximum optimizations, slower compilation but faster runtime
 debug = false # No debug info, smaller binary
 lto = "fat" # Link Time Optimization for aggressive optimization
 codegen-units = 1 # Single codegen unit for maximum optimization (can increase compile time)
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "fat"
