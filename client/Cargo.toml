@@ -16,6 +16,10 @@ anyhow = { workspace = true }
 log = { workspace = true }
 socket2 = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio-splice2 = {version = "0.3.2", optional = true}
+
 [features]
-default = ["reqwest/default"]
+default = ["reqwest/default", "splice"]
 rustls-tls = ["reqwest/rustls-tls"]
+splice = ["tokio-splice2"]

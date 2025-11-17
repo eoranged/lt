@@ -3,8 +3,7 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use socket2::{SockRef, TcpKeepalive};
 use std::sync::Arc;
-use tokio::io;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{self, AsyncWriteExt};
 use tokio::net::TcpStream;
 pub use tokio::sync::broadcast;
 use tokio::sync::Semaphore;
@@ -211,6 +210,27 @@ async fn tunnel_to_endpoint(
     });
 }
 
+#[cfg(any(not(target_os = "linux"), not(feature = "splice")))]
+pub async fn copy_bidirectional<A, B>(a: &mut A, b: &mut B) -> io::Result<(u64, u64)>
+where
+    A: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized,
+    B: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized,
+{
+    let (tx, rx) =  tokio::io::copy_bidirectional(a, b).await?;
+    Ok((tx, rx))
+}
+
+#[cfg(all(target_os = "linux", feature = "splice"))]
+pub async fn copy_bidirectional<A, B>(a: &mut A, b: &mut B) -> io::Result<(u64, u64)>
+where
+    A: tokio_splice2::AsyncReadFd + tokio_splice2::AsyncWriteFd + tokio_splice2::IsNotFile + Unpin,
+    B: tokio_splice2::AsyncReadFd + tokio_splice2::AsyncWriteFd + tokio_splice2::IsNotFile + Unpin,
+{
+    let traffic_result = tokio_splice2::copy_bidirectional(a, b).await?;
+    let (tx, rx) = (traffic_result.tx, traffic_result.rx);
+    Ok((tx as u64, rx as u64))
+}
+
 async fn handle_connection(
     remote_host: String,
     remote_ip: Option<String>,
@@ -234,7 +254,10 @@ async fn handle_connection(
     let sf = SockRef::from(&remote_stream);
     sf.set_tcp_keepalive(&ka)?;
 
-    io::copy_bidirectional(&mut remote_stream, &mut local_stream).await?;
+   
+    let (rlb, lrb) = copy_bidirectional(&mut remote_stream, &mut local_stream).await?;
+
+    log::debug!("Processed connection: remote->local {} bytes, local->remote {} bytes", rlb, lrb);
     Ok(())
 }
 
