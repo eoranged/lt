@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
             };
             let result = open_tunnel(config).await?;
             log::info!("Tunnel url: {:?}", result);
-            println!("Tunnel url: {:?}", result);
+            println!("Tunnel url: {}", result);
 
             signal::ctrl_c().await?;
             log::info!("Quit");

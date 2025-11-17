@@ -10,7 +10,7 @@ repository = "https://github.com/eoranged/lt"
 [workspace.dependencies]
 tokio = { version = "1.48", features = ["full"] }
 anyhow = { version = "1.0", features = ["backtrace"] }
-log = "0.4.28"
+log = {version = "0.4.28", features = ["release_max_level_error"]}
 serde = { version = "1.0", features = ["derive"] }
 socket2 = "0.6"
 
