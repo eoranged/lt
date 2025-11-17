@@ -10,7 +10,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use actix_web::{web, App, HttpServer};
 use anyhow::Result;
-use dotenv::dotenv;
+use dotenvy::dotenv;
 use hyper::{server::conn::http1, service::service_fn};
 use tokio::{net::TcpListener, sync::Mutex, time::timeout};
 
