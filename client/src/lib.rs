@@ -1,4 +1,3 @@
-use anyhow::Result;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use socket2::{SockRef, TcpKeepalive};
@@ -57,7 +56,7 @@ pub struct ClientConfig {
 }
 
 /// Open tunnels directly between server and localhost
-pub async fn open_tunnel(config: ClientConfig) -> Result<String> {
+pub async fn open_tunnel(config: ClientConfig) -> anyhow::Result<String> {
     let ClientConfig {
         server,
         subdomain,
@@ -69,7 +68,6 @@ pub async fn open_tunnel(config: ClientConfig) -> Result<String> {
     } = config;
     let tunnel_info = get_tunnel_endpoint(server.clone(), subdomain, credential).await?;
 
-    // TODO check the connect is failed and restart the proxy.
     tunnel_to_endpoint(
         tunnel_info.clone(),
         local_host,
@@ -93,7 +91,7 @@ async fn get_tunnel_endpoint(
     server: Option<String>,
     subdomain: Option<String>,
     credential: Option<String>,
-) -> Result<TunnelServerInfo> {
+) -> anyhow::Result<TunnelServerInfo> {
     let server = server
         .as_deref()
         .unwrap_or(PROXY_SERVER)
@@ -124,6 +122,7 @@ async fn get_tunnel_endpoint(
     Ok(tunnel_info)
 }
 
+/// localtunnel-specific password feature
 async fn fetch_tunnel_password(server: Option<String>) {
     let server = server
         .as_deref()
@@ -137,11 +136,11 @@ async fn fetch_tunnel_password(server: Option<String>) {
                 println!("Tunnel password: {}", password);
             }
             Err(err) => {
-                log::info!("Failed to read tunnel password response: {:?}", err);
+                log::debug!("Failed to read tunnel password response: {:?}", err);
             }
         },
         Err(err) => {
-            log::info!("Failed to fetch tunnel password: {:?}", err);
+            log::debug!("Failed to fetch tunnel password: {:?}", err);
         }
     }
 }
@@ -210,25 +209,83 @@ async fn tunnel_to_endpoint(
     });
 }
 
+/// copy_bidirectional wrapper for tokio
 #[cfg(any(not(target_os = "linux"), not(feature = "splice")))]
+#[inline(always)]
 pub async fn copy_bidirectional<A, B>(a: &mut A, b: &mut B) -> io::Result<(u64, u64)>
 where
     A: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized,
     B: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized,
 {
-    let (tx, rx) =  tokio::io::copy_bidirectional(a, b).await?;
+    log::debug!("Starting tokio::io::copy_bidirectional");
+    let (tx, rx) = tokio::io::copy_bidirectional(a, b).await?;
     Ok((tx, rx))
 }
 
 #[cfg(all(target_os = "linux", feature = "splice"))]
+#[inline(always)]
 pub async fn copy_bidirectional<A, B>(a: &mut A, b: &mut B) -> io::Result<(u64, u64)>
 where
     A: tokio_splice2::AsyncReadFd + tokio_splice2::AsyncWriteFd + tokio_splice2::IsNotFile + Unpin,
     B: tokio_splice2::AsyncReadFd + tokio_splice2::AsyncWriteFd + tokio_splice2::IsNotFile + Unpin,
 {
+    log::debug!("Starting tokio_splice2::copy_bidirectional");
     let traffic_result = tokio_splice2::copy_bidirectional(a, b).await?;
     let (tx, rx) = (traffic_result.tx, traffic_result.rx);
     Ok((tx as u64, rx as u64))
+}
+
+const MAX_TIMEOUT_MS: u64 = 10000;
+const TIMEOUT_BASE_MS: u64 = 500;
+// Create TcpStream with retry logic
+async fn create_stream<A: tokio::net::ToSocketAddrs>(
+    addr: A,
+    alias: &str,
+) -> io::Result<TcpStream> {
+    let mut retry_count: u64 = 0;
+    loop {
+        let stream = match TcpStream::connect(&addr).await {
+            Ok(stream) => stream,
+            Err(err) => {
+                log::debug!("Error connecting to {}: {:?}", alias, err);
+                if retry_count == 0 {
+                    log::info!("Cannot connect to {}, retrying", alias);
+                    println!("Cannot connect to {}, retrying...", alias);
+                }
+                retry_count = retry_count + 1;
+
+                let sleep_duration_ms =
+                    std::cmp::min(retry_count * TIMEOUT_BASE_MS, MAX_TIMEOUT_MS);
+                log::debug!("Sleeping for {} ms", sleep_duration_ms);
+                tokio::time::sleep(Duration::from_millis(sleep_duration_ms)).await;
+                continue;
+            }
+        };
+        if retry_count > 0 {
+            print!("Connected to {}", alias);
+        }
+        return Ok(stream);
+    }
+}
+
+/// Combine up to two errors into one
+fn combine_err((a, b): (Option<io::Error>, Option<io::Error>)) -> Option<io::Error> {
+    match (a, b) {
+        (Some(e1), Some(e2)) => Some(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Multiple errors: '{:?}' and '{:?}'", e1, e2),
+        )),
+        (Some(e1), None) => Some(e1),
+        (None, o) => o,
+    }
+}
+
+// Close stream or return error depending on the result
+async fn close_stream_or_handle_error(res: io::Result<TcpStream>) -> Option<io::Error> {
+    match res {
+        Ok(mut stream) => stream.shutdown().await.err(),
+        Err(error) => Some(error),
+    }
 }
 
 async fn handle_connection(
@@ -237,14 +294,27 @@ async fn handle_connection(
     remote_port: u16,
     local_host: String,
     local_port: u16,
-) -> Result<()> {
+) -> Result<(), io::Error> {
     let target_host = remote_ip.unwrap_or(remote_host);
-    log::debug!("Connect to remote: {}, {}", target_host, remote_port);
-    let mut remote_stream = TcpStream::connect(format!("{}:{}", target_host, remote_port)).await?;
 
-    log::debug!("Connect to local: {}, {}", local_host, local_port);
-    let mut local_stream = TcpStream::connect(format!("{}:{}", local_host, local_port)).await?;
-    
+    // Open streams to local and remote servers in parallel, If any fails - cleanup
+    let (mut local_stream, mut remote_stream) = match futures_util::join!(
+        create_stream(format!("{}:{}", local_host, local_port), "local"),
+        create_stream(format!("{}:{}", target_host, remote_port), "remote")
+    ) {
+        (Ok(local_stream), Ok(remote_stream)) => (local_stream, remote_stream),
+        (a, b) => {
+            match combine_err(futures_util::join!(
+                close_stream_or_handle_error(a),
+                close_stream_or_handle_error(b),
+            )) {
+                Some(err) => return Err(err),
+                // Should be unreachable, so panic if we get here
+                None => panic!("No errors remain after processing errors!"),
+            }
+        }
+    };
+
     // configure keepalive on remote socket to early detect network issues and attempt to re-establish the connection.
     let ka = TcpKeepalive::new()
         .with_time(TCP_KEEPALIVE_TIME)
@@ -254,10 +324,22 @@ async fn handle_connection(
     let sf = SockRef::from(&remote_stream);
     sf.set_tcp_keepalive(&ka)?;
 
-   
-    let (rlb, lrb) = copy_bidirectional(&mut remote_stream, &mut local_stream).await?;
+    let (rlb, lrb) = match copy_bidirectional(&mut remote_stream, &mut local_stream).await {
+        Ok(value) => value,
+        Err(err) => {
+            log::warn!("copy_bidirectional failed: {}", err);
+            remote_stream.shutdown().await?;
+            local_stream.shutdown().await?;
+            // Suppress error, since It's already handled
+            (0 as u64, 0 as u64)
+        }
+    };
 
-    log::debug!("Processed connection: remote->local {} bytes, local->remote {} bytes", rlb, lrb);
+    log::debug!(
+        "Processed connection: remote->local {} bytes, local->remote {} bytes",
+        rlb,
+        lrb
+    );
     Ok(())
 }
 
