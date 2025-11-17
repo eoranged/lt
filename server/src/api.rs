@@ -74,10 +74,10 @@ pub async fn request_endpoint(
         Ok(false) => {
             return HttpResponse::BadRequest().body(
                 "Request subdomain is invalid, only chars in lowercase and numbers are allowed",
-            )
+            );
         }
         Err(err) => {
-            return HttpResponse::InternalServerError().body(format!("Server Error: {:?}", err))
+            return HttpResponse::InternalServerError().body(format!("Server Error: {:?}", err));
         }
     }
 

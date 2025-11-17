@@ -68,7 +68,7 @@ pub async fn open_tunnel(config: ClientConfig) -> Result<String> {
         max_conn,
         credential,
     } = config;
-    let tunnel_info = get_tunnel_endpoint(server, subdomain, credential).await?;
+    let tunnel_info = get_tunnel_endpoint(server.clone(), subdomain, credential).await?;
 
     // TODO check the connect is failed and restart the proxy.
     tunnel_to_endpoint(
@@ -83,6 +83,9 @@ pub async fn open_tunnel(config: ClientConfig) -> Result<String> {
     if let Some(cached_url) = &tunnel_info.cached_url {
         log::info!("Cached tunnel url: {}", cached_url);
     }
+
+    // Try to fetch the tunnel password
+    fetch_tunnel_password(server).await;
 
     Ok(tunnel_info.url)
 }
@@ -120,6 +123,28 @@ async fn get_tunnel_endpoint(
     };
 
     Ok(tunnel_info)
+}
+
+async fn fetch_tunnel_password(server: Option<String>) {
+    let server = server
+        .as_deref()
+        .unwrap_or(PROXY_SERVER)
+        .trim_end_matches('/');
+    let password_uri = format!("{}/mytunnelpassword", server);
+
+    match reqwest::get(&password_uri).await {
+        Ok(resp) => match resp.text().await {
+            Ok(password) => {
+                println!("Tunnel password: {}", password);
+            }
+            Err(err) => {
+                log::info!("Failed to read tunnel password response: {:?}", err);
+            }
+        },
+        Err(err) => {
+            log::info!("Failed to fetch tunnel password: {:?}", err);
+        }
+    }
 }
 
 async fn tunnel_to_endpoint(
