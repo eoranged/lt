@@ -19,7 +19,7 @@ hyper-util = "0.1"
 reqwest = { version = "0.12", features = [
     "json",
     "blocking",
-    "native-tls-vendored",
+    "native-tls",
 ] }
 lazy_static = "1.5"
 envy = "0.4"
@@ -32,4 +32,6 @@ clap = { version = "4.5", features = ["derive"], optional = true}
 
 
 [features]
+default = ["native-tls-vendored"]
 "clap" = ["dep:clap"]
+native-tls-vendored = ["reqwest/native-tls-vendored"]
