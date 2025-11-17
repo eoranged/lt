@@ -91,7 +91,7 @@ You can create a `.env` file in the project root with these variables. See `.env
 
 ## Sponsor
 
-__Please help me build OSS__ 👉 [GitHub Sponsors](https://github.com/sponsors/kaichaosun)
+Support author of original project 👉 [GitHub Sponsors](https://github.com/sponsors/kaichaosun)
 
 ## Resources
 
