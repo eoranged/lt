@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use tokio::sync::Semaphore;
-
 use anyhow::Result;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use socket2::{SockRef, TcpKeepalive};
+use std::sync::Arc;
 use tokio::io;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 pub use tokio::sync::broadcast;
-use tokio::time::{sleep, Duration};
+use tokio::sync::Semaphore;
+use tokio::time::Duration;
 
 pub const PROXY_SERVER: &str = "https://localtunnel.me";
 pub const LOCAL_HOST: &str = "127.0.0.1";
@@ -186,12 +186,11 @@ async fn tunnel_to_endpoint(
                     tokio::spawn(async move {
                         log::info!("Create a new proxy connection.");
                         tokio::select! {
-                            res = handle_connection(remote_host.clone(), remote_ip.clone(), server_port, local_host, local_port) => {
+                            res = handle_connection(remote_host, remote_ip, server_port, local_host, local_port) => {
                                 match res {
                                     Ok(_) => log::info!("Connection result: {:?}", res),
                                     Err(err) => {
                                         log::error!("Failed to connect to proxy or local server: {:?}", err);
-                                        sleep(Duration::from_secs(10)).await;
                                     }
                                 }
                             }
@@ -222,9 +221,10 @@ async fn handle_connection(
     let target_host = remote_ip.unwrap_or(remote_host);
     log::debug!("Connect to remote: {}, {}", target_host, remote_port);
     let mut remote_stream = TcpStream::connect(format!("{}:{}", target_host, remote_port)).await?;
+
     log::debug!("Connect to local: {}, {}", local_host, local_port);
     let mut local_stream = TcpStream::connect(format!("{}:{}", local_host, local_port)).await?;
-
+    
     // configure keepalive on remote socket to early detect network issues and attempt to re-establish the connection.
     let ka = TcpKeepalive::new()
         .with_time(TCP_KEEPALIVE_TIME)
