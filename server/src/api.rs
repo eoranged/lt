@@ -8,6 +8,10 @@ use crate::auth::{Auth, CfWorkerStore, PlaintextPassword};
 use crate::state::State;
 use crate::AuthMode;
 
+lazy_static! {
+    static ref ENDPOINT_REGEX: Regex = Regex::new("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$").expect("Invalid Regex");
+}
+
 #[get("/api/status")]
 pub async fn api_status(state: web::Data<State>) -> impl Responder {
     let manager = state.manager.lock().await;
@@ -214,8 +218,7 @@ pub async fn request_endpoint(
 
 fn validate_endpoint(endpoint: &str) -> Result<bool> {
     // Don't allow A-Z uppercase since it will convert to lowercase in browser
-    let re = Regex::new("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")?;
-    Ok(re.is_match(endpoint))
+    Ok(ENDPOINT_REGEX.is_match(endpoint))
 }
 
 #[derive(Debug, Deserialize)]

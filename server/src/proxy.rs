@@ -13,6 +13,10 @@ use tokio::sync::Mutex;
 use crate::error::ServerError;
 use crate::state::ClientManager;
 
+lazy_static! {
+    static ref PROTOCOL_REGEX: Regex = Regex::new(r"(https?|wss?)://").expect("Invalid Regex");
+}
+
 /// Reverse proxy handler
 pub async fn proxy_handler(
     mut req: Request<Incoming>,
@@ -114,8 +118,7 @@ pub async fn proxy_handler(
 }
 
 fn extract(hostname: &str) -> Result<String> {
-    let re = Regex::new(r"(https?|wss?)://")?;
-    let hostname = re.replace_all(hostname, "");
+    let hostname = PROTOCOL_REGEX.replace_all(hostname, "");
 
     let subdomain = hostname
         .split('.')
