@@ -69,7 +69,7 @@ pub async fn start(config: ServerConfig) -> Result<()> {
         auth_mode
     );
 
-    // TODO: validate auth config on start
+    auth::validate(&auth_mode, &CONFIG)?;
 
     let manager = Arc::new(Mutex::new(ClientManager::new(max_sockets)));
     let api_state = web::Data::new(State {

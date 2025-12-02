@@ -68,3 +68,37 @@ impl Auth for CfWorkerStore {
         Ok(credential == resp)
     }
 }
+
+pub fn validate(mode: &crate::AuthMode, config: &crate::Config) -> Result<()> {
+    match mode {
+        crate::AuthMode::PLAINTEXT => {
+            if config.plaintext_password.is_none() {
+                return Err(anyhow::anyhow!("Missing PLAINTEXT_PASSWORD env var"));
+            }
+        }
+        crate::AuthMode::CLOUDFLARE => {
+            let mut missing = Vec::new();
+            if config.cloudflare_account.is_none() {
+                missing.push("CLOUDFLARE_ACCOUNT");
+            }
+            if config.cloudflare_namespace.is_none() {
+                missing.push("CLOUDFLARE_NAMESPACE");
+            }
+            if config.cloudflare_auth_email.is_none() {
+                missing.push("CLOUDFLARE_AUTH_EMAIL");
+            }
+            if config.cloudflare_auth_key.is_none() {
+                missing.push("CLOUDFLARE_AUTH_KEY");
+            }
+
+            if !missing.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Missing CLOUDFLARE credentials: {}",
+                    missing.join(", ")
+                ));
+            }
+        }
+        crate::AuthMode::NOAUTH => {}
+    }
+    Ok(())
+}
