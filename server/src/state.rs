@@ -35,7 +35,7 @@ pub struct State {
 
 pub struct ClientManager {
     pub clients: HashMap<String, Arc<Mutex<Client>>>,
-    pub _tunnels: u16,
+    pub tunnels: u16,
     pub default_max_sockets: u8,
 }
 
@@ -43,7 +43,7 @@ impl ClientManager {
     pub fn new(max_sockets: u8) -> Self {
         ClientManager {
             clients: HashMap::new(),
-            _tunnels: 0,
+            tunnels: 0,
             default_max_sockets: max_sockets,
         }
     }
@@ -51,9 +51,14 @@ impl ClientManager {
     pub async fn put(&mut self, url: String) -> io::Result<u16> {
         let client = Arc::new(Mutex::new(Client::new(self.default_max_sockets)));
         self.clients.insert(url, client.clone());
+        self.tunnels += 1;
 
         let mut client = client.lock().await;
         client.listen().await
+    }
+
+    pub fn get_client(&self, id: &str) -> Option<Arc<Mutex<Client>>> {
+        self.clients.get(id).cloned()
     }
 
     /// clean up old unused clients
@@ -70,6 +75,9 @@ impl ClientManager {
         for url in to_remove {
             log::debug!("cleanup client {url}");
             self.clients.remove(url.as_str());
+            if self.tunnels > 0 {
+                self.tunnels -= 1;
+            }
         }
     }
 }
@@ -190,6 +198,19 @@ impl Client {
 
         sockets.is_empty() && self.last_connection_time.elapsed() > CLEANUP_TIMEOUT
     }
+
+    /// Get statistics about this client's connected sockets
+    pub async fn stats(&self) -> ClientStats {
+        let sockets = self.available_sockets.lock().await;
+        ClientStats {
+            connected_sockets: sockets.len(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ClientStats {
+    pub connected_sockets: usize,
 }
 
 impl Drop for Client {

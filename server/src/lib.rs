@@ -14,7 +14,7 @@ use dotenvy::dotenv;
 use hyper::{server::conn::http1, service::service_fn};
 use tokio::{net::TcpListener, sync::Mutex, time::timeout};
 
-use crate::api::{api_status, request_endpoint};
+use crate::api::{api_status, api_tunnel_status, request_endpoint};
 use crate::config::Config;
 use crate::proxy::proxy_handler;
 use crate::state::{ClientManager, State};
@@ -115,6 +115,7 @@ pub async fn start(config: ServerConfig) -> Result<()> {
         App::new()
             .app_data(api_state.clone())
             .service(api_status)
+            .service(api_tunnel_status)
             .service(request_endpoint)
     })
     .bind(("0.0.0.0", api_port))?

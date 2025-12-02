@@ -8,13 +8,73 @@ use crate::state::State;
 use crate::AuthMode;
 
 #[get("/api/status")]
-pub async fn api_status() -> impl Responder {
+pub async fn api_status(state: web::Data<State>) -> impl Responder {
+    let manager = state.manager.lock().await;
+
+    // Get memory usage using jemalloc stats
+    let mem = get_memory_usage();
+
     let status = ApiStatus {
-        tunnels_count: 0,
-        tunels: "kaichao".to_string(),
+        tunnels: manager.tunnels,
+        mem,
     };
 
     HttpResponse::Ok().json(status)
+}
+
+#[get("/api/tunnels/{id}/status")]
+pub async fn api_tunnel_status(
+    tunnel_id: web::Path<String>,
+    state: web::Data<State>,
+) -> impl Responder {
+    let manager = state.manager.lock().await;
+
+    match manager.get_client(&tunnel_id) {
+        Some(client) => {
+            let client = client.lock().await;
+            let stats = client.stats().await;
+            let status = TunnelStatus {
+                connected_sockets: stats.connected_sockets,
+            };
+            HttpResponse::Ok().json(status)
+        }
+        None => HttpResponse::NotFound().finish(),
+    }
+}
+
+fn get_memory_usage() -> MemoryUsage {
+    // Try to get memory stats from jemalloc if available, otherwise use simple approximation
+    #[cfg(feature = "jemalloc")]
+    {
+        use jemalloc_ctl::{epoch, stats};
+
+        if let (Ok(e), Ok(allocated), Ok(resident)) = (
+            epoch::mib(),
+            stats::allocated::mib(),
+            stats::resident::mib(),
+        ) {
+            if let (Ok(_), Ok(allocated_val), Ok(resident_val)) = (
+                e.advance(),
+                allocated.read(),
+                resident.read(),
+            ) {
+                return MemoryUsage {
+                    rss: resident_val,
+                    heap_total: allocated_val,
+                    heap_used: allocated_val,
+                    external: 0,
+                };
+            }
+        }
+    }
+
+    // Fallback: basic memory usage
+    MemoryUsage {
+        rss: 0,
+        heap_total: 0,
+        heap_used: 0,
+        external: 0,
+    }
 }
 
 async fn validate_credentials(
@@ -121,8 +181,21 @@ pub struct AuthInfo {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ApiStatus {
-    tunnels_count: u16,
-    tunels: String,
+    tunnels: u16,
+    mem: MemoryUsage,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct MemoryUsage {
+    rss: usize,
+    heap_total: usize,
+    heap_used: usize,
+    external: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TunnelStatus {
+    connected_sockets: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
