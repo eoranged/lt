@@ -28,12 +28,16 @@ pub async fn proxy_handler(
 
     let endpoint = extract(hostname)?;
 
-    let client_stream = {
-        let mut manager = manager.lock().await;
-        let client = manager
+    let client = {
+        let manager = manager.lock().await;
+        manager
             .clients
-            .get_mut(&endpoint)
-            .ok_or(ServerError::ProxyNotReady)?;
+            .get(&endpoint)
+            .cloned()
+            .ok_or(ServerError::ProxyNotReady)?
+    };
+
+    let client_stream = {
         let mut client = client.lock().await;
         client.take().await.ok_or(ServerError::EmptyConnection)?
     };
