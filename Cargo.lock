@@ -1095,6 +1095,7 @@ dependencies = [
  "lazy_static",
  "log",
  "memory-stats",
+ "rand",
  "regex",
  "reqwest",
  "serde",

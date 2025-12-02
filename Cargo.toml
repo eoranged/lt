@@ -13,7 +13,7 @@ anyhow = { version = "1.0", features = ["backtrace"] }
 log = {version = "0.4.28", features = ["release_max_level_error"]}
 serde = { version = "1.0", features = ["derive"] }
 socket2 = "0.6"
-tikv-jemallocator = {version = "0.6", optional = true}
+tikv-jemallocator = {version = "0.6"}
 
 [profile.release]
 opt-level = "s" # Maximum optimizations, slower compilation but faster runtime

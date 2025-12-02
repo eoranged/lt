@@ -2,6 +2,7 @@ use actix_web::{get, web, HttpResponse, Responder};
 use anyhow::Result;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use rand::{distributions::Alphanumeric, Rng};
 
 use crate::auth::{Auth, CfWorkerStore, PlaintextPassword};
 use crate::state::State;
@@ -119,6 +120,47 @@ async fn validate_credentials(
     }
 }
 
+#[get("/")]
+pub async fn request_root(
+    info: web::Query<RootQuery>,
+    state: web::Data<State>,
+) -> impl Responder {
+    if info.new.is_some() {
+        let id: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect::<String>()
+            .to_lowercase();
+        
+        log::debug!("Making new client with id {}", id);
+        
+        let mut manager = state.manager.lock().await;
+        match manager.put(id.clone()).await {
+            Ok(port) => {
+                let schema = if state.secure { "https" } else { "http" };
+                let info = ProxyInfo {
+                    id: id.clone(),
+                    port,
+                    max_conn_count: state.max_sockets,
+                    url: format!("{}://{}.{}", schema, id, state.domain),
+                    ip: "127.0.0.1".to_string(),
+                    cached_url: "".to_string(),
+                };
+
+                log::debug!("Proxy info, {:?}", info);
+                HttpResponse::Ok().json(info)
+            }
+            Err(e) => {
+                log::error!("Client manager failed to put proxy endpoint: {:?}", e);
+                HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
+            }
+        }
+    } else {
+        HttpResponse::Ok().body("Localtunnel Server")
+    }
+}
+
 /// Request proxy endpoint
 #[get("/{endpoint}")]
 pub async fn request_endpoint(
@@ -156,6 +198,8 @@ pub async fn request_endpoint(
                 port,
                 max_conn_count: state.max_sockets,
                 url: format!("{}://{}.{}", schema, endpoint, state.domain),
+                ip: "127.0.0.1".to_string(),
+                cached_url: "".to_string(),
             };
 
             log::debug!("Proxy info, {:?}", info);
@@ -177,6 +221,11 @@ fn validate_endpoint(endpoint: &str) -> Result<bool> {
 #[derive(Debug, Deserialize)]
 pub struct AuthInfo {
     credential: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RootQuery {
+    new: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -204,6 +253,8 @@ struct ProxyInfo {
     port: u16,
     max_conn_count: u8,
     url: String,
+    ip: String,
+    cached_url: String,
 }
 
 #[cfg(test)]
