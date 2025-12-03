@@ -90,7 +90,7 @@ async fn validate_credentials(
     if state.auth_mode == AuthMode::NOAUTH {
         return Ok(true);
     }
-    let credential = match info.credential.clone() {
+    let credential = match info.credential.as_ref() {
         Some(val) => val,
         None => {
             return Err(actix_web::error::ErrorUnauthorized(
@@ -140,14 +140,14 @@ pub async fn request_root(
         log::debug!("Making new client with id {}", id);
         
         let mut manager = state.manager.lock().await;
-        match manager.put(id.clone()).await {
+        match manager.put(&id).await {
             Ok(port) => {
                 let schema = if state.secure { "https" } else { "http" };
                 let info = ProxyInfo {
-                    id: id.clone(),
+                    url: format!("{}://{}.{}", schema, id, state.domain),
+                    id,
                     port,
                     max_conn_count: state.max_sockets,
-                    url: format!("{}://{}.{}", schema, id, state.domain),
                     ip: "127.0.0.1".to_string(),
                     cached_url: "".to_string(),
                 };
@@ -194,7 +194,7 @@ pub async fn request_endpoint(
     }
 
     let mut manager = state.manager.lock().await;
-    match manager.put(endpoint.to_string()).await {
+    match manager.put(&endpoint).await {
         Ok(port) => {
             let schema = if state.secure { "https" } else { "http" };
             let info = ProxyInfo {

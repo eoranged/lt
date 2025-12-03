@@ -66,7 +66,7 @@ pub async fn open_tunnel(config: ClientConfig) -> anyhow::Result<String> {
         max_conn,
         credential,
     } = config;
-    let tunnel_info = get_tunnel_endpoint(server.clone(), subdomain, credential).await?;
+    let tunnel_info = get_tunnel_endpoint(server.as_deref(), subdomain, credential).await?;
 
     tunnel_to_endpoint(
         tunnel_info.clone(),
@@ -82,18 +82,17 @@ pub async fn open_tunnel(config: ClientConfig) -> anyhow::Result<String> {
     }
 
     // Try to fetch the tunnel password
-    fetch_tunnel_password(server).await;
+    fetch_tunnel_password(server.as_deref()).await;
 
     Ok(tunnel_info.url)
 }
 
 async fn get_tunnel_endpoint(
-    server: Option<String>,
+    server: Option<&str>,
     subdomain: Option<String>,
     credential: Option<String>,
 ) -> anyhow::Result<TunnelServerInfo> {
     let server = server
-        .as_deref()
         .unwrap_or(PROXY_SERVER)
         .trim_end_matches('/');
     let assigned_domain = subdomain.as_deref().unwrap_or("?new");
@@ -123,9 +122,8 @@ async fn get_tunnel_endpoint(
 }
 
 /// localtunnel-specific password feature
-async fn fetch_tunnel_password(server: Option<String>) {
+async fn fetch_tunnel_password(server: Option<&str>) {
     let server = server
-        .as_deref()
         .unwrap_or(PROXY_SERVER)
         .trim_end_matches('/');
     let password_uri = format!("{}/mytunnelpassword", server);
@@ -153,10 +151,11 @@ async fn tunnel_to_endpoint(
     max_conn: u8,
 ) {
     log::info!("Tunnel server info: {:?}", server);
-    let remote_host = server.remote_host.clone();
-    let remote_ip = server.remote_ip.clone();
+    log::info!("Tunnel server info: {:?}", server);
+    let remote_host = Arc::new(server.remote_host);
+    let remote_ip = server.remote_ip.map(Arc::new);
     let server_port = server.remote_port;
-    let local_host = local_host.unwrap_or(LOCAL_HOST.to_string());
+    let local_host = Arc::new(local_host.unwrap_or(LOCAL_HOST.to_string()));
 
     let count = std::cmp::min(server.max_conn_count, max_conn);
     log::info!("Max connection count: {}", count);
@@ -184,7 +183,7 @@ async fn tunnel_to_endpoint(
                     tokio::spawn(async move {
                         log::info!("Create a new proxy connection.");
                         tokio::select! {
-                            res = handle_connection(remote_host, remote_ip, server_port, local_host, local_port) => {
+                            res = handle_connection(remote_host.as_str(), remote_ip.as_deref().map(|s| s.as_str()), server_port, local_host.as_str(), local_port) => {
                                 match res {
                                     Ok(_) => log::info!("Connection result: {:?}", res),
                                     Err(err) => {
@@ -289,10 +288,10 @@ async fn close_stream_or_handle_error(res: io::Result<TcpStream>) -> Option<io::
 }
 
 async fn handle_connection(
-    remote_host: String,
-    remote_ip: Option<String>,
+    remote_host: &str,
+    remote_ip: Option<&str>,
     remote_port: u16,
-    local_host: String,
+    local_host: &str,
     local_port: u16,
 ) -> Result<(), io::Error> {
     let target_host = remote_ip.unwrap_or(remote_host);

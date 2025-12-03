@@ -48,9 +48,9 @@ impl ClientManager {
         }
     }
 
-    pub async fn put(&mut self, url: String) -> io::Result<u16> {
+    pub async fn put(&mut self, url: &str) -> io::Result<u16> {
         let client = Arc::new(Mutex::new(Client::new(self.default_max_sockets)));
-        self.clients.insert(url, client.clone());
+        self.clients.insert(url.to_string(), client.clone());
         self.tunnels += 1;
 
         let mut client = client.lock().await;

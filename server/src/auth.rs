@@ -24,7 +24,7 @@ impl Auth for PlaintextPassword {
     async fn credential_is_valid(&self, credential: &str, _value: &str) -> Result<bool> {
         let password = CONFIG
             .plaintext_password
-            .clone()
+            .as_ref()
             .ok_or(ServerError::InvalidConfig)?;
 
         Ok(credential == password)
@@ -36,19 +36,19 @@ impl Auth for CfWorkerStore {
     async fn credential_is_valid(&self, credential: &str, value: &str) -> Result<bool> {
         let account = CONFIG
             .cloudflare_account
-            .clone()
+            .as_ref()
             .ok_or(ServerError::InvalidConfig)?;
         let namespace = CONFIG
             .cloudflare_namespace
-            .clone()
+            .as_ref()
             .ok_or(ServerError::InvalidConfig)?;
         let email = CONFIG
             .cloudflare_auth_email
-            .clone()
+            .as_ref()
             .ok_or(ServerError::InvalidConfig)?;
         let key = CONFIG
             .cloudflare_auth_key
-            .clone()
+            .as_ref()
             .ok_or(ServerError::InvalidConfig)?;
 
         let client = reqwest::Client::new();
